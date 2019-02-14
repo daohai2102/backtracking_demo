@@ -13,15 +13,27 @@ int **constraint = NULL;
 int *vars = NULL;
 struct LinkedList **domains = NULL;
 
+int *solution = NULL;
+int n_sol_elements = 0;
+
+void clean_up();
+
 int** read_topo_from_file(char* filename);
 int* read_channels_from_file(char* filename);
 void print_topo(int n, int** constraint);
 void print_channel_utilization(int n, struct LinkedList **domains);
+void print_solution();
 struct Channel get_current_channel(int index);
 
+/* for constraint propagation */
 void node_consistent();
 int revise(int v1, int v2);
 int arc_consistent();
+/*****************************/
+
+/* for backtracking */
+int consistent(int var, int value);
+int search_bt(int level);
 
 int main(){
 	srand((time(0)));
@@ -29,6 +41,8 @@ int main(){
 	constraint = read_topo_from_file("topo.txt");
 	
 	vars = read_channels_from_file("channels.txt");
+
+	solution = malloc(n*sizeof(int));
 
 	domains = malloc(n*sizeof(struct LinkedList*));
 	for (i = 0; i < n; i++){
@@ -113,6 +127,12 @@ int main(){
 	arc_consistent();
 	printf("channel utilization after performing arc_consistent\n");
 	print_channel_utilization(n, domains);
+	if (search_bt(0)){
+		printf("solution:\n");
+		print_solution();
+	} else {
+		printf("no solution\n");
+	}
 	return 0;
 }
 
@@ -162,7 +182,7 @@ void print_topo(int n, int** constraint){
 void print_channel_utilization(int n, struct LinkedList **domains){
 	int i;
 	for (i = 0; i < n; i++){
-		printf("%3d: ", i);
+		printf("%3d: ", i + 1);
 		struct Node *it = domains[i]->head;
 		for (; it != NULL; it = it->next){
 			struct Channel channel = *(struct Channel*)it->data;
@@ -191,7 +211,7 @@ void node_consistent(){
 	for (i = 0; i < n; i ++){
 		struct Channel cur_chan = get_current_channel(i);
 		float current_bss_util = cur_chan.total_util - cur_chan.env_util;
-		printf("%-3d: %d, %f, %f, %f\n", i, cur_chan.chan_no, cur_chan.total_util, cur_chan.env_util, current_bss_util);
+		printf("%3d: %d, %f, %f, %f\n", i + 1, cur_chan.chan_no, cur_chan.total_util, cur_chan.env_util, current_bss_util);
 		struct Node *it = domains[i]->head;
 		int remove_head = 0;
 		for (; it != NULL; it = it->next){
@@ -292,4 +312,56 @@ int arc_consistent(){
 	}
 
 	return 1;
+}
+
+void clean_up(){
+	int i;
+	for (i = 0; i < n; i ++){
+		free(constraint[i]);
+		destructLinkedList(domains[i]);
+	}
+	free(constraint);
+	free(domains);
+	free(vars);
+	free(solution);
+}
+
+int consistent(int var, int value){
+	/* check against the past variables */
+	int i;
+	for (i = 0; i < n_sol_elements; i ++){
+		if (constraint[i][var] && value == solution[i])
+			return 0;
+	}
+	return 1;
+}
+
+int search_bt(int level){
+	/* select the var at index level */
+	struct Node *it = domains[level]->head;
+	for (; it != NULL; it = it->next){
+		struct Channel *chan = (struct Channel*)(it->data);
+		if (consistent(level, chan->chan_no)){
+			solution[level] = chan->chan_no;
+			n_sol_elements ++;
+			if (level == n - 1){
+				/* found a solution */
+				return 1;
+			} else {
+				if (search_bt(level + 1))
+					return 1;
+			}
+		} else
+			continue;
+		n_sol_elements --;
+	}
+	/* no solution found */
+	return 0;
+}
+
+void print_solution(){
+	int i;
+	for (i = 0; i < n; i ++){
+		printf("AP %3d: %d\n", i+1, solution[i]);
+	}
 }
